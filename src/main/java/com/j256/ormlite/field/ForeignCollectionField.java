@@ -15,16 +15,10 @@ import com.j256.ormlite.stmt.QueryBuilder;
  * Annotation that identifies a {@link ForeignCollection} field in a class that corresponds to objects in a foreign
  * table that match the foreign-id of the current class.
  * 
- * <p>
- * <blockquote>
- * 
  * <pre>
  * &#064;ForeignCollection(id = true)
  * private ForeignCollection&lt;Order&gt; orders;
  * </pre>
- * 
- * </blockquote>
- * </p>
  * 
  * @author graywatson
  */
@@ -35,12 +29,14 @@ public @interface ForeignCollectionField {
 	/**
 	 * @see #maxEagerForeignCollectionLevel()
 	 */
-	public static final int MAX_EAGER_LEVEL = 1;
+	public static final int DEFAULT_MAX_EAGER_LEVEL = 1;
 
 	/**
+	 * <p>
 	 * Set to true if the collection is a an eager collection where all of the results should be retrieved when the
 	 * parent object is retrieved. Default is false (lazy) when the results will not be retrieved until you ask for the
 	 * iterator from the collection.
+	 * </p>
 	 * 
 	 * <p>
 	 * <b>NOTE:</b> If this is false (i.e. we have a lazy collection) then a connection is held open to the database as
@@ -60,7 +56,7 @@ public @interface ForeignCollectionField {
 	 * @deprecated Should use {@link #maxEagerLevel()}
 	 */
 	@Deprecated
-	int maxEagerForeignCollectionLevel() default MAX_EAGER_LEVEL;
+	int maxEagerForeignCollectionLevel() default DEFAULT_MAX_EAGER_LEVEL;
 
 	/**
 	 * Set this to be the number of times to expand an eager foreign collection's foreign collection. If you query for A
@@ -69,7 +65,7 @@ public @interface ForeignCollectionField {
 	 * if you query for A, the collection of B will be eager fetched but each of the B objects will have a lazy
 	 * collection instead of an eager collection of C. It should be increased only if you know what you are doing.
 	 */
-	int maxEagerLevel() default MAX_EAGER_LEVEL;
+	int maxEagerLevel() default DEFAULT_MAX_EAGER_LEVEL;
 
 	/**
 	 * The name of the column. This is only used when you want to match the string passed to

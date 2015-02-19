@@ -1,5 +1,6 @@
 package com.j256.ormlite.dao;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -8,6 +9,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.j256.ormlite.db.DatabaseType;
 import com.j256.ormlite.field.DataType;
@@ -56,7 +58,15 @@ import com.j256.ormlite.table.TableInfo;
  */
 public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 
-	private boolean initialized;
+	private static final ThreadLocal<List<BaseDaoImpl<?, ?>>> daoConfigLevelLocal =
+			new ThreadLocal<List<BaseDaoImpl<?, ?>>>() {
+				@Override
+				protected List<BaseDaoImpl<?, ?>> initialValue() {
+					return new ArrayList<BaseDaoImpl<?, ?>>(10);
+				}
+			};
+	private static ReferenceObjectCache defaultObjectCache;
+	private static final Object constantObject = new Object();
 
 	protected StatementExecutor<T, ID> statementExecutor;
 	protected DatabaseType databaseType;
@@ -67,15 +77,9 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 	protected CloseableIterator<T> lastIterator;
 	protected ObjectFactory<T> objectFactory;
 
-	private static final ThreadLocal<List<BaseDaoImpl<?, ?>>> daoConfigLevelLocal =
-			new ThreadLocal<List<BaseDaoImpl<?, ?>>>() {
-				@Override
-				protected List<BaseDaoImpl<?, ?>> initialValue() {
-					return new ArrayList<BaseDaoImpl<?, ?>>(10);
-				}
-			};
-	private static ReferenceObjectCache defaultObjectCache;
+	private boolean initialized;
 	private ObjectCache objectCache;
+	private Map<DaoObserver, Object> daoObserverMap;
 
 	/**
 	 * Construct our base DAO using Spring type wiring. The {@link ConnectionSource} must be set with the
@@ -313,6 +317,35 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 		}
 	}
 
+	public int create(final Collection<T> datas) throws SQLException {
+		checkForInitialized();
+		for (T data : datas) {
+			if (data instanceof BaseDaoEnabled) {
+				@SuppressWarnings("unchecked")
+				BaseDaoEnabled<T, ID> daoEnabled = (BaseDaoEnabled<T, ID>) data;
+				daoEnabled.setDao(this);
+			}
+		}
+		/*
+		 * This is a little strange in that we get the connection but then the call-batch-task saves another one. I
+		 * thought that it was an ok thing to do otherwise it made the call-batch-tasks more complicated.
+		 */
+		final DatabaseConnection connection = connectionSource.getReadWriteConnection();
+		try {
+			return callBatchTasks(new Callable<Integer>() {
+				public Integer call() throws SQLException {
+					int modCount = 0;
+					for (T data : datas) {
+						modCount += statementExecutor.create(connection, data, objectCache);
+					}
+					return modCount;
+				}
+			});
+		} finally {
+			connectionSource.releaseConnection(connection);
+		}
+	}
+
 	public T createIfNotExists(T data) throws SQLException {
 		if (data == null) {
 			return null;
@@ -346,13 +379,17 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 		// ignore updating a null object
 		if (data == null) {
 			return 0;
-		} else {
-			DatabaseConnection connection = connectionSource.getReadWriteConnection();
-			try {
-				return statementExecutor.update(connection, data, objectCache);
-			} finally {
-				connectionSource.releaseConnection(connection);
-			}
+		}
+		if (data instanceof BaseDaoEnabled) {
+			@SuppressWarnings("unchecked")
+			BaseDaoEnabled<T, ID> daoEnabled = (BaseDaoEnabled<T, ID>) data;
+			daoEnabled.setDao(this);
+		}
+		DatabaseConnection connection = connectionSource.getReadWriteConnection();
+		try {
+			return statementExecutor.update(connection, data, objectCache);
+		} finally {
+			connectionSource.releaseConnection(connection);
 		}
 	}
 
@@ -386,18 +423,17 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 		// ignore refreshing a null object
 		if (data == null) {
 			return 0;
-		} else {
-			if (data instanceof BaseDaoEnabled) {
-				@SuppressWarnings("unchecked")
-				BaseDaoEnabled<T, ID> daoEnabled = (BaseDaoEnabled<T, ID>) data;
-				daoEnabled.setDao(this);
-			}
-			DatabaseConnection connection = connectionSource.getReadOnlyConnection();
-			try {
-				return statementExecutor.refresh(connection, data, objectCache);
-			} finally {
-				connectionSource.releaseConnection(connection);
-			}
+		}
+		if (data instanceof BaseDaoEnabled) {
+			@SuppressWarnings("unchecked")
+			BaseDaoEnabled<T, ID> daoEnabled = (BaseDaoEnabled<T, ID>) data;
+			daoEnabled.setDao(this);
+		}
+		DatabaseConnection connection = connectionSource.getReadOnlyConnection();
+		try {
+			return statementExecutor.refresh(connection, data, objectCache);
+		} finally {
+			connectionSource.releaseConnection(connection);
 		}
 	}
 
@@ -517,7 +553,7 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 		});
 	}
 
-	public void closeLastIterator() throws SQLException {
+	public void closeLastIterator() throws IOException {
 		if (lastIterator != null) {
 			lastIterator.close();
 			lastIterator = null;
@@ -573,15 +609,15 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 		}
 	}
 
-    public <UO> GenericRawResults<UO> queryRaw(String query, ResultSetMapper<UO> mapper, String... arguments)
-            throws SQLException {
-        checkForInitialized();
-        try {
-            return statementExecutor.queryRaw(connectionSource, query, mapper, arguments, objectCache);
-        } catch (SQLException e) {
-            throw SqlExceptionUtil.create("Could not perform raw query for " + query, e);
-        }
-    }
+	public <UO> GenericRawResults<UO> queryRaw(String query, DatabaseResultsMapper<UO> mapper, String... arguments)
+			throws SQLException {
+		checkForInitialized();
+		try {
+			return statementExecutor.queryRaw(connectionSource, query, mapper, arguments, objectCache);
+		} catch (SQLException e) {
+			throw SqlExceptionUtil.create("Could not perform raw query for " + query, e);
+		}
+	}
 
 	public long queryRawValue(String query, String... arguments) throws SQLException {
 		checkForInitialized();
@@ -633,18 +669,7 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 
 	public <CT> CT callBatchTasks(Callable<CT> callable) throws SQLException {
 		checkForInitialized();
-		DatabaseConnection connection = connectionSource.getReadWriteConnection();
-		try {
-			/*
-			 * We need to save the connection because we are going to be disabling auto-commit on it and we don't want
-			 * pooled connection factories to give us another connection where auto-commit might still be enabled.
-			 */
-			boolean saved = connectionSource.saveSpecialConnection(connection);
-			return statementExecutor.callBatchTasks(connection, saved, callable);
-		} finally {
-			connectionSource.clearSpecialConnection(connection);
-			connectionSource.releaseConnection(connection);
-		}
+		return statementExecutor.callBatchTasks(connectionSource, callable);
 	}
 
 	public String objectToString(T data) {
@@ -801,6 +826,39 @@ public abstract class BaseDaoImpl<T, ID> implements Dao<T, ID> {
 
 	public T mapSelectStarRow(DatabaseResults results) throws SQLException {
 		return statementExecutor.getSelectStarRowMapper().mapRow(results);
+	}
+
+	public void notifyChanges() {
+		if (daoObserverMap != null) {
+			for (DaoObserver daoObserver : daoObserverMap.keySet()) {
+				daoObserver.onChange();
+			}
+		}
+	}
+
+	public void registerObserver(DaoObserver observer) {
+		if (daoObserverMap == null) {
+			/*
+			 * We are doing this so no other systems need to pay the penalty for the new observer code. This seems like
+			 * it would be a double-check locking bug but I don't think so. We are putting into a synchronized
+			 * collection that locks so we should not have partial constructor issues.
+			 */
+			synchronized (this) {
+				if (daoObserverMap == null) {
+					daoObserverMap = new ConcurrentHashMap<Dao.DaoObserver, Object>();
+				}
+			}
+		}
+		// no values in the map
+		daoObserverMap.put(observer, constantObject);
+	}
+
+	public void unregisterObserver(DaoObserver observer) {
+		if (daoObserverMap != null) {
+			synchronized (daoObserverMap) {
+				daoObserverMap.remove(observer);
+			}
+		}
 	}
 
 	public GenericRowMapper<T> getSelectStarRowMapper() throws SQLException {

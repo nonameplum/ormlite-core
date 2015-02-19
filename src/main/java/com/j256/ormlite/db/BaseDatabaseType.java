@@ -121,6 +121,10 @@ public abstract class BaseDatabaseType implements DatabaseType {
 				appendBigDecimalNumericType(sb, fieldType, fieldWidth);
 				break;
 
+			case UUID :
+				appendUuidNativeType(sb, fieldType, fieldWidth);
+				break;
+
 			case UNKNOWN :
 			default :
 				// shouldn't be able to get here unless we have a missing case
@@ -168,6 +172,14 @@ public abstract class BaseDatabaseType implements DatabaseType {
 		} else {
 			sb.append("VARCHAR");
 		}
+	}
+
+	/**
+	 * Output the SQL type for a Java UUID. This is used to support specific sub-class database types which support the
+	 * UUID type.
+	 */
+	protected void appendUuidNativeType(StringBuilder sb, FieldType fieldType, int fieldWidth) {
+		throw new UnsupportedOperationException("UUID is not supported by this database type");
 	}
 
 	/**
@@ -383,12 +395,12 @@ public abstract class BaseDatabaseType implements DatabaseType {
 		return "-- ";
 	}
 
-	public DataPersister getDataPersister(DataPersister defaultPersister) {
+	public DataPersister getDataPersister(DataPersister defaultPersister, FieldType fieldType) {
 		// default is noop
 		return defaultPersister;
 	}
 
-	public FieldConverter getFieldConverter(DataPersister dataPersister) {
+	public FieldConverter getFieldConverter(DataPersister dataPersister, FieldType fieldType) {
 		// default is to use the dataPersister itself
 		return dataPersister;
 	}

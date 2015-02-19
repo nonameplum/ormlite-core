@@ -1,25 +1,21 @@
 package com.j256.ormlite.dao;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Collection;
 
 import com.j256.ormlite.field.ForeignCollectionField;
 
 /**
+ * <p>
  * Collection that is set on a field that as been marked with the {@link ForeignCollectionField} annotation when an
  * object is refreshed or queried (i.e. not created).
- * 
- * <p>
- * <blockquote>
+ * </p>
  * 
  * <pre>
  * &#064;ForeignCollectionField(eager = false)
  * private ForeignCollection&lt;Order&gt; orders;
  * </pre>
- * 
- * </blockquote>
- * 
- * </p>
  * 
  * <p>
  * <b>NOTE:</b> If the collection has been marked as being "lazy" then just about all methods in this class result in a
@@ -81,7 +77,7 @@ public interface ForeignCollection<T> extends Collection<T>, CloseableIterable<T
 	 * iterable for each thread instead.
 	 * </p>
 	 */
-	public void closeLastIterator() throws SQLException;
+	public void closeLastIterator() throws IOException;
 
 	/**
 	 * Returns true if this an eager collection otherwise false.
@@ -135,4 +131,9 @@ public interface ForeignCollection<T> extends Collection<T>, CloseableIterable<T
 	 * @see Collection#add(Object)
 	 */
 	public boolean add(T obj);
+
+	/**
+	 * Return the DAO object associated with this foreign collection. For usage for those who know what they are doing.
+	 */
+	public Dao<T, ?> getDao();
 }

@@ -1,5 +1,6 @@
 package com.j256.ormlite.stmt;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -7,13 +8,14 @@ import java.util.List;
 import com.j256.ormlite.dao.CloseableIterator;
 import com.j256.ormlite.dao.GenericRawResults;
 import com.j256.ormlite.dao.ObjectCache;
+import com.j256.ormlite.misc.IOUtils;
 import com.j256.ormlite.support.CompiledStatement;
 import com.j256.ormlite.support.ConnectionSource;
 import com.j256.ormlite.support.DatabaseConnection;
 
 /**
  * Handler for our raw results objects which does the conversion for various different results: String[], Object[], and
- * user defined <T>.
+ * user defined T.
  * 
  * @author graywatson
  */
@@ -50,7 +52,7 @@ public class RawResultsImpl<T> implements GenericRawResults<T> {
 			}
 			return results;
 		} finally {
-			iterator.close();
+			IOUtils.closeThrowSqlException(this, "raw results iterator");
 		}
 	}
 
@@ -62,7 +64,7 @@ public class RawResultsImpl<T> implements GenericRawResults<T> {
 				return null;
 			}
 		} finally {
-			close();
+			IOUtils.closeThrowSqlException(this, "raw results iterator");
 		}
 	}
 
@@ -74,7 +76,7 @@ public class RawResultsImpl<T> implements GenericRawResults<T> {
 		return iterator;
 	}
 
-	public void close() throws SQLException {
+	public void close() throws IOException {
 		if (iterator != null) {
 			iterator.close();
 			iterator = null;

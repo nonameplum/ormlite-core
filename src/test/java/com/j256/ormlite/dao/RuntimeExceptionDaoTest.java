@@ -63,7 +63,8 @@ public class RuntimeExceptionDaoTest extends BaseCoreTest {
 			boolean found = false;
 
 			// coverage magic
-			if (daoMethod.getName().equals("$VRi")) {
+			if (daoMethod.getName().equals("$VRi") || daoMethod.getName().equals("spliterator") /* java 8 method */
+					|| daoMethod.getName().equals("forEach") /* java 8 method */) {
 				continue;
 			}
 
@@ -82,7 +83,7 @@ public class RuntimeExceptionDaoTest extends BaseCoreTest {
 
 			// make sure we found the method in RuntimeExceptionDao
 			if (!found) {
-				failedMessages.add("Could not find Dao method: " + daoMethod);
+				failedMessages.add(RuntimeExceptionDao.class.getName() + " did not include method: " + daoMethod);
 			}
 		}
 
@@ -103,7 +104,7 @@ public class RuntimeExceptionDaoTest extends BaseCoreTest {
 			for (String message : failedMessages) {
 				System.err.println(message);
 			}
-			fail("See the console for details");
+			fail(failedMessages.get(0) + ", see the console for more");
 		}
 	}
 
@@ -495,9 +496,9 @@ public class RuntimeExceptionDaoTest extends BaseCoreTest {
 		@SuppressWarnings("unchecked")
 		Dao<Foo, String> dao = (Dao<Foo, String>) createMock(Dao.class);
 		RuntimeExceptionDao<Foo, String> rtDao = new RuntimeExceptionDao<Foo, String>(dao);
-		expect(dao.create(null)).andThrow(new SQLException("Testing catch"));
+		expect(dao.create((Foo) null)).andThrow(new SQLException("Testing catch"));
 		replay(dao);
-		rtDao.create(null);
+		rtDao.create((Foo) null);
 		verify(dao);
 	}
 

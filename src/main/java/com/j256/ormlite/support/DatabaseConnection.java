@@ -1,5 +1,6 @@
 package com.j256.ormlite.support;
 
+import java.io.Closeable;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 
@@ -13,7 +14,7 @@ import com.j256.ormlite.stmt.StatementBuilder.StatementType;
  * 
  * @author graywatson
  */
-public interface DatabaseConnection {
+public interface DatabaseConnection extends Closeable {
 
 	/** returned by {@link #queryForOne} if more than one result was found by the query */
 	public final static Object MORE_THAN_ONE = new Object();
@@ -137,7 +138,7 @@ public interface DatabaseConnection {
 	 *            The mapper to use to convert the row into the returned object.
 	 * @param objectCache
 	 *            Any object cache associated with the query or null if none.
-	 * @return The first data item returned by the query which can be cast to <T>, null if none, the object
+	 * @return The first data item returned by the query which can be cast to T, null if none, the object
 	 *         {@link #MORE_THAN_ONE} if more than one result was found.
 	 */
 	public <T> Object queryForOne(String statement, Object[] args, FieldType[] argfieldTypes,
@@ -164,12 +165,7 @@ public interface DatabaseConnection {
 	public long queryForLong(String statement, Object[] args, FieldType[] argFieldTypes) throws SQLException;
 
 	/**
-	 * Close the connection to the database.
-	 */
-	public void close() throws SQLException;
-
-	/**
-	 * Close the connection to the database but swallow any SQLExceptions.
+	 * Close the connection to the database but swallow any exceptions.
 	 */
 	public void closeQuietly();
 

@@ -27,6 +27,8 @@ import com.j256.ormlite.support.DatabaseResults;
  */
 public abstract class BaseDataType extends BaseFieldConverter implements DataPersister {
 
+	private final static Class<?>[] NO_CLASSES = new Class<?>[0];
+
 	/**
 	 * Type of the data as it is persisted in SQL-land. For example, if you are storing a DateTime, you might consider
 	 * this to be a {@link SqlType#LONG} if you are storing it as epoche milliseconds.
@@ -44,6 +46,15 @@ public abstract class BaseDataType extends BaseFieldConverter implements DataPer
 	public BaseDataType(SqlType sqlType, Class<?>[] classes) {
 		this.sqlType = sqlType;
 		this.classes = classes;
+	}
+
+	/**
+	 * @param sqlType
+	 *            Type of the class as it is persisted in the databases.
+	 */
+	public BaseDataType(SqlType sqlType) {
+		this.sqlType = sqlType;
+		this.classes = NO_CLASSES;
 	}
 
 	public abstract Object parseDefaultString(FieldType fieldType, String defaultStr) throws SQLException;
@@ -153,11 +164,17 @@ public abstract class BaseDataType extends BaseFieldConverter implements DataPer
 		return false;
 	}
 
-	public Object moveToNextValue(Object currentValue) {
+	/**
+	 * Move the current-value to the next value. Used for the version field.
+	 * 
+	 * @throws SQLException
+	 *             For sub-classes.
+	 */
+	public Object moveToNextValue(Object currentValue) throws SQLException {
 		return null;
 	}
 
 	public Object resultStringToJava(FieldType fieldType, String stringValue, int columnPos) throws SQLException {
-		return parseDefaultString(fieldType, stringValue);
+		return sqlArgToJava(fieldType, parseDefaultString(fieldType, stringValue), columnPos);
 	}
 }

@@ -23,7 +23,7 @@ public class EnumIntegerType extends BaseEnumType {
 	}
 
 	private EnumIntegerType() {
-		super(SqlType.INTEGER, new Class<?>[0]);
+		super(SqlType.INTEGER);
 	}
 
 	/**
@@ -81,11 +81,6 @@ public class EnumIntegerType extends BaseEnumType {
 			enumIntMap.put(enumVal.ordinal(), enumVal);
 		}
 		return enumIntMap;
-	}
-
-	@Override
-	public Object resultStringToJava(FieldType fieldType, String stringValue, int columnPos) throws SQLException {
-		return sqlArgToJava(fieldType, Integer.parseInt(stringValue), columnPos);
 	}
 
 	@Override

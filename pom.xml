@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<!-- ormlite configuration file for Maven (http://maven.apache.org/) -->
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.j256.ormlite</groupId>
@@ -40,6 +41,19 @@
 			<timezone>-5</timezone>
 		</developer>
 	</developers>
+	<properties>
+		<!-- default empty string that can be overridden on command line. due to surefire's parser bug, if we don't have this here 
+			and have any other characters where this is used, it'll get replaced with string "null" -->
+		<surefire.argLine />
+
+		<!-- external test package versions -->
+		<persistence-api-version>1.0</persistence-api-version>
+		<easymock-version>2.3</easymock-version>
+		<h2-version>1.2.128</h2-version>
+		<junit-version>4.8.1</junit-version>
+		<commons-lang-version>2.1</commons-lang-version>
+		<slf4j-version>1.7.2</slf4j-version>
+	</properties>
 	<profiles>
 		<profile>
 			<id>sf</id>
@@ -55,6 +69,27 @@
 					<url>sftp://graywatson,ormlite@frs.sourceforge.net:/home/frs/project/ormlite/snapshots</url>
 				</snapshotRepository>
 			</distributionManagement>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>1.1</version>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>${gpgPhase}</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+						<configuration>
+							<keyname>D3412AC1</keyname>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
 		</profile>
 		<profile>
 			<id>st</id>
@@ -70,6 +105,27 @@
 					<url>http://oss.sonatype.org/content/repositories/snapshots/</url>
 				</snapshotRepository>
 			</distributionManagement>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>1.1</version>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>${gpgPhase}</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+						<configuration>
+							<keyname>D3412AC1</keyname>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
 		</profile>
 	</profiles>
 	<build>
@@ -144,7 +200,7 @@
 						&lt;a
 						href="http://creativecommons.org/licenses/by-sa/3.0/" &gt;Creative Commons Attribution-Share Alike 3.0 License.
 						&lt;/a&gt; </bottom>
-					<additionalparam>-tag inheritDoc:X</additionalparam>
+					<additionalparam>-tag inheritDoc:X -Xdoclint:none</additionalparam>
 					<excludePackageNames>
 						com.j256.ormlite.stmt.query,
 						com.j256.ormlite.stmt.mapped,
@@ -180,23 +236,6 @@
 						</goals>
 					</execution>
 				</executions>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-gpg-plugin</artifactId>
-				<version>1.1</version>
-				<executions>
-					<execution>
-						<id>sign-artifacts</id>
-						<phase>${gpgPhase}</phase>
-						<goals>
-							<goal>sign</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<keyname>D3412AC1</keyname>
-				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
@@ -263,19 +302,19 @@
 			</plugins>
 		</pluginManagement>
 	</build>
-	<properties>
-		<!-- default empty string that can be overridden on command line. due to surefire's parser bug, if we don't have this here 
-			and have any other characters where this is used, it'll get replaced with string "null" -->
-		<surefire.argLine />
-
-		<!-- external test package versions -->
-		<persistence-api-version>1.0</persistence-api-version>
-		<easymock-version>2.3</easymock-version>
-		<h2-version>1.2.128</h2-version>
-		<junit-version>4.8.1</junit-version>
-		<commons-lang-version>2.1</commons-lang-version>
-	</properties>
 	<dependencies>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-api</artifactId>
+			<version>${slf4j-version}</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-log4j12</artifactId>
+			<version>${slf4j-version}</version>
+			<scope>provided</scope>
+		</dependency>
 		<!-- =================================================================== -->
 		<!-- main dependencies -->
 		<!-- =================================================================== -->
@@ -283,7 +322,7 @@
 			<groupId>javax.persistence</groupId>
 			<artifactId>persistence-api</artifactId>
 			<version>${persistence-api-version}</version>
-			<scope>test</scope>
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>

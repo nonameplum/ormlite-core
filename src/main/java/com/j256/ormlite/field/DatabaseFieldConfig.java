@@ -3,10 +3,11 @@ package com.j256.ormlite.field;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.sql.SQLException;
+import java.util.Locale;
 
 import com.j256.ormlite.db.DatabaseType;
 import com.j256.ormlite.field.types.VoidType;
-import com.j256.ormlite.misc.JavaxPersistence;
+import com.j256.ormlite.misc.JavaxPersistenceConfigurer;
 import com.j256.ormlite.table.DatabaseTableConfig;
 
 /**
@@ -17,11 +18,16 @@ import com.j256.ormlite.table.DatabaseTableConfig;
  */
 public class DatabaseFieldConfig {
 
-	private static final int DEFAULT_MAX_EAGER_FOREIGN_COLLECTION_LEVEL = ForeignCollectionField.MAX_EAGER_LEVEL;
 	public static final Class<? extends DataPersister> DEFAULT_PERSISTER_CLASS = VoidType.class;
 	public static final DataType DEFAULT_DATA_TYPE = DataType.UNKNOWN;
 	public static final boolean DEFAULT_CAN_BE_NULL = true;
 	public static final boolean DEFAULT_FOREIGN_COLLECTION_ORDER_ASCENDING = true;
+	public static final int NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED = -1;
+
+	private static final int DEFAULT_MAX_EAGER_FOREIGN_COLLECTION_LEVEL =
+			ForeignCollectionField.DEFAULT_MAX_EAGER_LEVEL;
+
+	private static JavaxPersistenceConfigurer javaxPersistenceConfigurer;
 
 	private String fieldName;
 	private String columnName;
@@ -47,7 +53,7 @@ public class DatabaseFieldConfig {
 	private boolean uniqueIndex;
 	private String uniqueIndexName;
 	private boolean foreignAutoRefresh;
-	private int maxForeignAutoRefreshLevel = DatabaseField.NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED;
+	private int maxForeignAutoRefreshLevel = NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED;
 	private Class<? extends DataPersister> persisterClass = DEFAULT_PERSISTER_CLASS;
 	private boolean allowGeneratedIdInsert;
 	private String columnDefinition;
@@ -63,6 +69,19 @@ public class DatabaseFieldConfig {
 	private String foreignCollectionOrderColumnName;
 	private boolean foreignCollectionOrderAscending = DEFAULT_FOREIGN_COLLECTION_ORDER_ASCENDING;
 	private String foreignCollectionForeignFieldName;
+
+	static {
+		try {
+			// see if we have this class at runtime
+			Class.forName("javax.persistence.Entity");
+			// if we do then get our JavaxPersistance class
+			Class<?> clazz = Class.forName("com.j256.ormlite.misc.JavaxPersistenceImpl");
+			javaxPersistenceConfigurer = (JavaxPersistenceConfigurer) clazz.getConstructor().newInstance();
+		} catch (Exception e) {
+			// no configurer
+			javaxPersistenceConfigurer = null;
+		}
+	}
 
 	public DatabaseFieldConfig() {
 		// for spring
@@ -346,7 +365,15 @@ public class DatabaseFieldConfig {
 	}
 
 	public int getMaxForeignAutoRefreshLevel() {
-		return maxForeignAutoRefreshLevel;
+		/*
+		 * We need to do this because otherwise things that inject the default max-foreign-auto-refresh value (config
+		 * files, Android annotation hacks, etc) might turn on the auto-refresh by accident.
+		 */
+		if (foreignAutoRefresh) {
+			return maxForeignAutoRefreshLevel;
+		} else {
+			return NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED;
+		}
 	}
 
 	public void setMaxForeignAutoRefreshLevel(int maxForeignLevel) {
@@ -527,33 +554,38 @@ public class DatabaseFieldConfig {
 		/*
 		 * NOTE: to remove javax.persistence usage, comment the following lines out
 		 */
-		DatabaseFieldConfig config = JavaxPersistence.createFieldConfig(databaseType, field);
-
-		// this can be null
-		return config;
+		if (javaxPersistenceConfigurer == null) {
+			return null;
+		} else {
+			// this can be null
+			return javaxPersistenceConfigurer.createFieldConfig(databaseType, field);
+		}
 	}
 
 	/**
 	 * Find and return the appropriate getter method for field.
 	 * 
-	 * @return Get method or null if none found.
+	 * @return Get method or null (or throws IllegalArgumentException) if none found.
 	 */
-	public static Method findGetMethod(Field field, boolean throwExceptions) {
-		String methodName = methodFromField(field, "get");
+	public static Method findGetMethod(Field field, boolean throwExceptions) throws IllegalArgumentException {
 		Method fieldGetMethod;
-		try {
-			fieldGetMethod = field.getDeclaringClass().getMethod(methodName);
-		} catch (Exception e) {
-			if (throwExceptions) {
-				throw new IllegalArgumentException("Could not find appropriate get method for " + field);
-			} else {
-				return null;
-			}
+		if (Locale.ENGLISH.equals(Locale.getDefault())) {
+			fieldGetMethod =
+					findMethodFromNames(field, true, throwExceptions, methodFromField(field, "get", null),
+							methodFromField(field, "is", null));
+		} else {
+			fieldGetMethod =
+					findMethodFromNames(field, true, throwExceptions, methodFromField(field, "get", null),
+							methodFromField(field, "get", Locale.ENGLISH), methodFromField(field, "is", null),
+							methodFromField(field, "is", Locale.ENGLISH));
+		}
+		if (fieldGetMethod == null) {
+			return null;
 		}
 		if (fieldGetMethod.getReturnType() != field.getType()) {
 			if (throwExceptions) {
-				throw new IllegalArgumentException("Return type of get method " + methodName + " does not return "
-						+ field.getType());
+				throw new IllegalArgumentException("Return type of get method " + fieldGetMethod.getName()
+						+ " does not return " + field.getType());
 			} else {
 				return null;
 			}
@@ -564,24 +596,24 @@ public class DatabaseFieldConfig {
 	/**
 	 * Find and return the appropriate setter method for field.
 	 * 
-	 * @return Set method or null if none found.
+	 * @return Set method or null (or throws IllegalArgumentException) if none found.
 	 */
-	public static Method findSetMethod(Field field, boolean throwExceptions) {
-		String methodName = methodFromField(field, "set");
+	public static Method findSetMethod(Field field, boolean throwExceptions) throws IllegalArgumentException {
 		Method fieldSetMethod;
-		try {
-			fieldSetMethod = field.getDeclaringClass().getMethod(methodName, field.getType());
-		} catch (Exception e) {
-			if (throwExceptions) {
-				throw new IllegalArgumentException("Could not find appropriate set method for " + field);
-			} else {
-				return null;
-			}
+		if (Locale.ENGLISH.equals(Locale.getDefault())) {
+			fieldSetMethod = findMethodFromNames(field, false, throwExceptions, methodFromField(field, "set", null));
+		} else {
+			fieldSetMethod =
+					findMethodFromNames(field, false, throwExceptions, methodFromField(field, "set", null),
+							methodFromField(field, "set", Locale.ENGLISH));
+		}
+		if (fieldSetMethod == null) {
+			return null;
 		}
 		if (fieldSetMethod.getReturnType() != void.class) {
 			if (throwExceptions) {
-				throw new IllegalArgumentException("Return type of set method " + methodName + " returns "
-						+ fieldSetMethod.getReturnType() + " instead of void");
+				throw new IllegalArgumentException("Return type of set method " + fieldSetMethod.getName()
+						+ " returns " + fieldSetMethod.getReturnType() + " instead of void");
 			} else {
 				return null;
 			}
@@ -622,7 +654,12 @@ public class DatabaseFieldConfig {
 		config.uniqueIndex = databaseField.uniqueIndex();
 		config.uniqueIndexName = valueIfNotBlank(databaseField.uniqueIndexName());
 		config.foreignAutoRefresh = databaseField.foreignAutoRefresh();
-		config.maxForeignAutoRefreshLevel = databaseField.maxForeignAutoRefreshLevel();
+		if (config.foreignAutoRefresh
+				|| databaseField.maxForeignAutoRefreshLevel() != DatabaseField.DEFAULT_MAX_FOREIGN_AUTO_REFRESH_LEVEL) {
+			config.maxForeignAutoRefreshLevel = databaseField.maxForeignAutoRefreshLevel();
+		} else {
+			config.maxForeignAutoRefreshLevel = NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED;
+		}
 		config.persisterClass = databaseField.persisterClass();
 		config.allowGeneratedIdInsert = databaseField.allowGeneratedIdInsert();
 		config.columnDefinition = valueIfNotBlank(databaseField.columnDefinition());
@@ -641,8 +678,7 @@ public class DatabaseFieldConfig {
 		if (foreignColumnName != null) {
 			foreignAutoRefresh = true;
 		}
-		if (foreignAutoRefresh
-				&& maxForeignAutoRefreshLevel == DatabaseField.NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED) {
+		if (foreignAutoRefresh && maxForeignAutoRefreshLevel == NO_MAX_FOREIGN_AUTO_REFRESH_LEVEL_SPECIFIED) {
 			maxForeignAutoRefreshLevel = DatabaseField.DEFAULT_MAX_FOREIGN_AUTO_REFRESH_LEVEL;
 		}
 	}
@@ -677,7 +713,7 @@ public class DatabaseFieldConfig {
 		config.foreignCollectionEager = foreignCollection.eager();
 		@SuppressWarnings("deprecation")
 		int maxEagerLevel = foreignCollection.maxEagerForeignCollectionLevel();
-		if (maxEagerLevel != ForeignCollectionField.MAX_EAGER_LEVEL) {
+		if (maxEagerLevel != ForeignCollectionField.DEFAULT_MAX_EAGER_LEVEL) {
 			config.foreignCollectionMaxEagerLevel = maxEagerLevel;
 		} else {
 			config.foreignCollectionMaxEagerLevel = foreignCollection.maxEagerLevel();
@@ -712,7 +748,44 @@ public class DatabaseFieldConfig {
 		}
 	}
 
-	private static String methodFromField(Field field, String prefix) {
-		return prefix + field.getName().substring(0, 1).toUpperCase() + field.getName().substring(1);
+	private static Method findMethodFromNames(Field field, boolean isGetMethod, boolean throwExceptions,
+			String... methodNames) {
+		NoSuchMethodException firstException = null;
+		for (String methodName : methodNames) {
+			try {
+				if (isGetMethod) {
+					// get method has no argument
+					return field.getDeclaringClass().getMethod(methodName);
+				} else {
+					// set method has same argument type as field
+					return field.getDeclaringClass().getMethod(methodName, field.getType());
+				}
+			} catch (NoSuchMethodException nsme) {
+				if (firstException == null) {
+					firstException = nsme;
+				}
+			}
+		}
+		if (throwExceptions) {
+			throw new IllegalArgumentException("Could not find appropriate " + (isGetMethod ? "get" : "set")
+					+ " method for " + field, firstException);
+		} else {
+			return null;
+		}
+	}
+
+	private static String methodFromField(Field field, String prefix, Locale locale) {
+		String name = field.getName();
+		String start = name.substring(0, 1);
+		if (locale == null) {
+			start = start.toUpperCase();
+		} else {
+			start = start.toUpperCase(locale);
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append(prefix);
+		sb.append(start);
+		sb.append(name, 1, name.length());
+		return sb.toString();
 	}
 }

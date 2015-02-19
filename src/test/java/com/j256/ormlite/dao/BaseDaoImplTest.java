@@ -22,12 +22,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.h2.api.Trigger;
 import org.junit.Test;
 
 import com.j256.ormlite.BaseCoreTest;
 import com.j256.ormlite.dao.Dao.CreateOrUpdateStatus;
+import com.j256.ormlite.dao.Dao.DaoObserver;
 import com.j256.ormlite.field.DataType;
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.field.FieldType;
@@ -1341,6 +1343,7 @@ public class BaseDaoImplTest extends BaseCoreTest {
 		Foo foo = new Foo();
 		int val = 6389;
 		foo.val = val;
+		foo.stringField = "hello there";
 		assertEquals(1, fooDao.create(foo));
 
 		Foreign foreign = new Foreign();
@@ -1349,9 +1352,11 @@ public class BaseDaoImplTest extends BaseCoreTest {
 
 		Foreign foreign2 = foreignDao.queryForId(foreign.id);
 		assertNotNull(foreign2);
+		assertNotNull(foreign2.foo);
 		assertNotNull(foreign2.foo.id);
 		assertEquals(foo.id, foreign2.foo.id);
 		assertEquals(0, foreign2.foo.val);
+		assertNull(foreign2.foo.stringField);
 
 		assertEquals(1, fooDao.refresh(foreign2.foo));
 		assertEquals(val, foreign2.foo.val);
@@ -2318,6 +2323,7 @@ public class BaseDaoImplTest extends BaseCoreTest {
 		assertNotNull(result);
 		assertNotNull(result.loop);
 		assertEquals(loop2.id, result.loop.id);
+		// level one
 		assertNotNull(result.loop.loop);
 		assertEquals(loop3.id, result.loop.loop.id);
 		assertNotNull(result.loop.loop.loop);
@@ -2418,6 +2424,62 @@ public class BaseDaoImplTest extends BaseCoreTest {
 
 		FewFields result = dao.queryForId(few.id);
 		assertNotNull(result);
+	}
+
+	@Test
+	public void testCreateCollection() throws Exception {
+		Dao<Foo, Integer> dao = createDao(Foo.class, true);
+		int numToCreate = 100;
+		List<Foo> fooList = new ArrayList<Foo>(numToCreate);
+		for (int i = 0; i < numToCreate; i++) {
+			Foo foo = new Foo();
+			foo.val = i;
+			fooList.add(foo);
+		}
+
+		// create them all at once
+		assertEquals(numToCreate, dao.create(fooList));
+
+		for (int i = 0; i < numToCreate; i++) {
+			Foo result = dao.queryForId(fooList.get(i).id);
+			assertEquals(i, result.val);
+		}
+	}
+
+	@Test
+	public void testDaoObserver() throws Exception {
+		Dao<Foo, Integer> dao = createDao(Foo.class, true);
+
+		final AtomicInteger changeCount = new AtomicInteger();
+		DaoObserver obverver = new DaoObserver() {
+			public void onChange() {
+				changeCount.incrementAndGet();
+			}
+		};
+		dao.registerObserver(obverver);
+
+		assertEquals(0, changeCount.get());
+		Foo foo = new Foo();
+		foo.val = 21312313;
+		assertEquals(1, dao.create(foo));
+		assertEquals(1, changeCount.get());
+
+		foo.val = foo.val + 1;
+		assertEquals(1, dao.create(foo));
+		assertEquals(2, changeCount.get());
+
+		// shouldn't change anything
+		dao.queryForAll();
+		assertEquals(2, changeCount.get());
+
+		assertEquals(1, dao.delete(foo));
+		assertEquals(3, changeCount.get());
+
+		dao.unregisterObserver(obverver);
+
+		assertEquals(1, dao.create(foo));
+		// shouldn't change not that we have removed the observer
+		assertEquals(3, changeCount.get());
 	}
 
 	/* ============================================================================================== */

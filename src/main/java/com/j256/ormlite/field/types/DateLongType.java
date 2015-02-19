@@ -26,7 +26,7 @@ public class DateLongType extends BaseDateType {
 	}
 
 	private DateLongType() {
-		super(SqlType.LONG, new Class<?>[0]);
+		super(SqlType.LONG);
 	}
 
 	/**
@@ -65,11 +65,6 @@ public class DateLongType extends BaseDateType {
 	@Override
 	public boolean isEscapedValue() {
 		return false;
-	}
-
-	@Override
-	public Object resultStringToJava(FieldType fieldType, String stringValue, int columnPos) {
-		return sqlArgToJava(fieldType, Long.parseLong(stringValue), columnPos);
 	}
 
 	@Override

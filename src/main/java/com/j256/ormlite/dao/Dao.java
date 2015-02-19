@@ -1,5 +1,6 @@
 package com.j256.ormlite.dao;
 
+import java.io.IOException;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.sql.SQLException;
@@ -162,6 +163,16 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	public int create(T data) throws SQLException;
 
 	/**
+	 * Just like {@link #create(Object)} but with a collection of objects. This will wrap the creates using the same
+	 * mechanism as {@link #callBatchTasks(Callable)}.
+	 * 
+	 * @param datas
+	 *            The collection of data items that we are creating in the database.
+	 * @return The number of rows updated in the database.
+	 */
+	public int create(Collection<T> datas) throws SQLException;
+
+	/**
 	 * This is a convenience method to creating a data item but only if the ID does not already exist in the table. This
 	 * extracts the id from the data parameter, does a {@link #queryForId(Object)} on it, returning the data if it
 	 * exists. If it does not exist {@link #create(Object)} will be called with the parameter.
@@ -310,15 +321,9 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * This satisfies the {@link Iterable} interface for the class and allows you to iterate through the objects in the
 	 * table using SQL. You can use code similar to the following:
 	 * 
-	 * <p>
-	 * <blockquote>
-	 * 
 	 * <pre>
 	 * for (Account account : accountDao) { ... }
 	 * </pre>
-	 * 
-	 * </blockquote>
-	 * </p>
 	 * 
 	 * <p>
 	 * <b>WARNING</b>: because the {@link Iterator#hasNext()}, {@link Iterator#next()}, etc. methods can only throw
@@ -360,9 +365,6 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * Same as {@link #iterator()} but with a prepared query parameter. See {@link #queryBuilder} for more information.
 	 * You use it like the following:
 	 * 
-	 * <p>
-	 * <blockquote>
-	 * 
 	 * <pre>
 	 * QueryBuilder&lt;Account, String&gt; qb = accountDao.queryBuilder();
 	 * ... custom query builder methods
@@ -376,9 +378,6 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 *     iterator.close();
 	 * }
 	 * </pre>
-	 * 
-	 * </blockquote>
-	 * </p>
 	 * 
 	 * @param preparedQuery
 	 *            Query used to iterate across a sub-set of the items in the database.
@@ -395,14 +394,14 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	public CloseableIterator<T> iterator(PreparedQuery<T> preparedQuery, int resultFlags) throws SQLException;
 
 	/**
+	 * <p>
 	 * This makes a one time use iterable class that can be closed afterwards. The DAO itself is
 	 * {@link CloseableWrappedIterable} but multiple threads can each call this to get their own closeable iterable.
 	 * This allows you to do something like:
-	 * 
-	 * <blockquote>
+	 * </p>
 	 * 
 	 * <pre>
-	 * CloseableWrappedIterable<Foo> wrappedIterable = fooDao.getWrappedIterable();
+	 * CloseableWrappedIterable&lt;Foo&gt; wrappedIterable = fooDao.getWrappedIterable();
 	 * try {
 	 *   for (Foo foo : wrappedIterable) {
 	 *       ...
@@ -411,8 +410,6 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 *   wrappedIterable.close();
 	 * }
 	 * </pre>
-	 * 
-	 * </blockquote>
 	 */
 	public CloseableWrappedIterable<T> getWrappedIterable();
 
@@ -430,21 +427,21 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * the {@link #getWrappedIterable()} method to get a wrapped iterable for each thread instead.
 	 * </p>
 	 */
-	public void closeLastIterator() throws SQLException;
+	public void closeLastIterator() throws IOException;
 
 	/**
+	 * <p>
 	 * Similar to the {@link #iterator(PreparedQuery)} except it returns a GenericRawResults object associated with the
 	 * SQL select query argument. Although you should use the {@link #iterator()} for most queries, this method allows
 	 * you to do special queries that aren't supported otherwise. Like the above iterator methods, you must call close
 	 * on the returned RawResults object once you are done with it. The arguments are optional but can be set with
 	 * strings to expand ? type of SQL.
+	 * </p>
 	 * 
 	 * <p>
 	 * You can use the {@link QueryBuilder#prepareStatementString()} method here if you want to build the query using
 	 * the structure of the QueryBuilder.
 	 * </p>
-	 * 
-	 * <p>
 	 * 
 	 * <pre>
 	 * QueryBuilder&lt;Account, Integer&gt; qb = accountDao.queryBuilder();
@@ -452,11 +449,9 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * results = accountDao.queryRaw(qb.prepareStatementString());
 	 * </pre>
 	 * 
-	 * </p>
-	 * 
-	 * If you want to use the QueryBuilder with arguments to the raw query then you should do something like:
-	 * 
 	 * <p>
+	 * If you want to use the QueryBuilder with arguments to the raw query then you should do something like:
+	 * </p>
 	 * 
 	 * <pre>
 	 * QueryBuilder&lt;Account, Integer&gt; qb = accountDao.queryBuilder();
@@ -465,8 +460,6 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * // the 10 at the end is an optional argument to fulfill the SelectArg above
 	 * results = accountDao.queryRaw(qb.prepareStatementString(), rawRowMapper, 10);
 	 * </pre>
-	 * 
-	 * </p>
 	 * 
 	 * <p>
 	 * <b>NOTE:</b> If you are using the {@link QueryBuilder#prepareStatementString()} to build your query, it may have
@@ -513,6 +506,13 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
             throws SQLException;
 
 	/**
+	 * Similar to the {@link #queryRaw(String, RawRowMapper, String...)} but this iterator returns rows that you can map
+	 * yourself using {@link DatabaseResultsMapper}.
+	 */
+	public <UO> GenericRawResults<UO> queryRaw(String query, DatabaseResultsMapper<UO> mapper, String... arguments)
+			throws SQLException;
+
+	/**
 	 * Perform a raw query that returns a single value (usually an aggregate function like MAX or COUNT). If the query
 	 * does not return a single long value then it will throw a SQLException.
 	 */
@@ -552,6 +552,13 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * <b>NOTE:</b> If neither auto-commit nor transactions are supported by the database type then this may just call
 	 * the callable. Also, "commit()" is <i>not</i> called on the connection at all. If "auto-commit" is disabled then
 	 * this will leave it off and nothing will have been persisted.
+	 * </p>
+	 * 
+	 * <p>
+	 * <b>NOTE:</b> Depending on your underlying database implementation and whether or not you are working with a
+	 * single database connection, this may synchronize internally to ensure that there are not race-conditions around
+	 * the transactions on the single connection. Android (for example) will synchronize. Also, you may also need to
+	 * synchronize calls to here and calls to {@link #setAutoCommit(DatabaseConnection, boolean)}.
 	 * </p>
 	 */
 	public <CT> CT callBatchTasks(Callable<CT> callable) throws Exception;
@@ -622,17 +629,23 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	public long countOf(PreparedQuery<T> preparedQuery) throws SQLException;
 
 	/**
+	 * <p>
 	 * Creates an empty collection and assigns it to the appropriate field in the parent object. This allows you to add
 	 * things to the collection from the start.
+	 * </p>
 	 * 
+	 * <p>
 	 * For example let's say you have an Account which has the field:
+	 * </p>
 	 * 
 	 * <pre>
 	 * &#064;ForeignCollectionField(columnName = &quot;orders&quot;)
 	 * Collection&lt;Order&gt; orders;
 	 * </pre>
 	 * 
+	 * <p>
 	 * You would then call:
+	 * </p>
 	 * 
 	 * <pre>
 	 * accoundDao.assignEmptyForeignCollection(account, &quot;orders&quot;);
@@ -758,6 +771,13 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * <b>WARNING:</b> Chances are you should be using the {@link #callBatchTasks(Callable)} instead of this method
 	 * unless you know what you are doing.
 	 * </p>
+	 * 
+	 * <p>
+	 * <b>NOTE:</b> Depending on your underlying database implementation and whether or not you are working with a
+	 * single database connection, you may need to synchronize calls to here and calls to
+	 * {@link #callBatchTasks(Callable)}, {@link #commit(DatabaseConnection)}, and {@link #rollBack(DatabaseConnection)}
+	 * .
+	 * </p>
 	 */
 	public void setAutoCommit(DatabaseConnection connection, boolean autoCommit) throws SQLException;
 
@@ -783,6 +803,13 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * <b>WARNING:</b> Chances are you should be using the {@link #callBatchTasks(Callable)} instead of this method
 	 * unless you know what you are doing.
 	 * </p>
+	 * 
+	 * <p>
+	 * <b>NOTE:</b> Depending on your underlying database implementation and whether or not you are working with a
+	 * single database connection, you may need to synchronize calls to here and calls to
+	 * {@link #callBatchTasks(Callable)}, {@link #setAutoCommit(DatabaseConnection, boolean)}, and
+	 * {@link #rollBack(DatabaseConnection)}.
+	 * </p>
 	 */
 	public void commit(DatabaseConnection connection) throws SQLException;
 
@@ -795,6 +822,13 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * <p>
 	 * <b>WARNING:</b> Chances are you should be using the {@link #callBatchTasks(Callable)} instead of this method
 	 * unless you know what you are doing.
+	 * </p>
+	 * 
+	 * <p>
+	 * <b>NOTE:</b> Depending on your underlying database implementation and whether or not you are working with a
+	 * single database connection, you may need to synchronize calls to here and calls to
+	 * {@link #callBatchTasks(Callable)}, {@link #setAutoCommit(DatabaseConnection, boolean)}, and
+	 * {@link #commit(DatabaseConnection)}.
 	 * </p>
 	 */
 	public void rollBack(DatabaseConnection connection) throws SQLException;
@@ -809,6 +843,27 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 	 * the factory.
 	 */
 	public void setObjectFactory(ObjectFactory<T> objectFactory);
+
+	/**
+	 * Register an observer that will be called when data changes for this DAO. You mustq make a call to
+	 * {@link #unregisterObserver(DaoObserver)} to de-register the observer after you are done with it.
+	 */
+	public void registerObserver(DaoObserver observer);
+
+	/**
+	 * Remove the observer from the registered list.
+	 */
+	public void unregisterObserver(DaoObserver observer);
+
+	/**
+	 * Notify any registered {@link DaoObserver}s that the underlying data may have changed. This is done automatically
+	 * when using {@link #create(Object)}, {@link #update(Object)}, or {@link #delete(Object)} type methods. Batch
+	 * methods will be notified once at the end of the batch, not for every statement in the batch.
+	 * 
+	 * NOTE: The {@link #updateRaw(String, String...)} and other raw methods will _not_ call notify automatically. You
+	 * will have to call this method yourself after you use the raw methods to change the entities.
+	 */
+	public void notifyChanges();
 
 	/**
 	 * Return class for the {@link Dao#createOrUpdate(Object)} method.
@@ -831,5 +886,16 @@ public interface Dao<T, ID> extends CloseableIterable<T> {
 		public int getNumLinesChanged() {
 			return numLinesChanged;
 		}
+	}
+
+	/**
+	 * Defines a class that can observe changes to entities managed by the DAO.
+	 */
+	public static interface DaoObserver {
+		/**
+		 * Called when entities possibly have changed in the DAO. This can be used to detect changes to the entities
+		 * managed by the DAO so that views can be updated.
+		 */
+		public void onChange();
 	}
 }

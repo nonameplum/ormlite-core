@@ -100,13 +100,13 @@ public interface DatabaseType {
 	 * Return the DataPersister to associate with the DataType. This allows the database instance to convert a field as
 	 * necessary before it goes to the database.
 	 */
-	public DataPersister getDataPersister(DataPersister defaultPersister);
+	public DataPersister getDataPersister(DataPersister defaultPersister, FieldType fieldType);
 
 	/**
 	 * Return the FieldConverter to associate with the DataType. This allows the database instance to convert a field as
 	 * necessary before it goes to the database.
 	 */
-	public FieldConverter getFieldConverter(DataPersister dataType);
+	public FieldConverter getFieldConverter(DataPersister dataType, FieldType fieldType);
 
 	/**
 	 * Return true if the database supports the width parameter on VARCHAR fields.
@@ -159,12 +159,12 @@ public interface DatabaseType {
 	public void appendCreateTableSuffix(StringBuilder sb);
 
 	/**
-	 * Returns true if a 'CREATE TABLE' statement should return 0. False if > 0.
+	 * Returns true if a 'CREATE TABLE' statement should return 0. False if &gt; 0.
 	 */
 	public boolean isCreateTableReturnsZero();
 
 	/**
-	 * Returns true if CREATE and DROP TABLE statements can return < 0 and still have worked. Gross!
+	 * Returns true if CREATE and DROP TABLE statements can return &lt; 0 and still have worked. Gross!
 	 */
 	public boolean isCreateTableReturnsNegative();
 

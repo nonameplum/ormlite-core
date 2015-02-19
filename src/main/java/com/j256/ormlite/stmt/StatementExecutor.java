@@ -6,13 +6,20 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-import com.j256.ormlite.dao.*;
+import com.j256.ormlite.dao.BaseDaoImpl;
+import com.j256.ormlite.dao.Dao;
+import com.j256.ormlite.dao.DatabaseResultsMapper;
+import com.j256.ormlite.dao.GenericRawResults;
+import com.j256.ormlite.dao.ObjectCache;
+import com.j256.ormlite.dao.RawRowMapper;
+import com.j256.ormlite.dao.RawRowObjectMapper;
 import com.j256.ormlite.db.DatabaseType;
 import com.j256.ormlite.field.DataType;
 import com.j256.ormlite.field.FieldType;
 import com.j256.ormlite.field.SqlType;
 import com.j256.ormlite.logger.Logger;
 import com.j256.ormlite.logger.LoggerFactory;
+import com.j256.ormlite.misc.IOUtils;
 import com.j256.ormlite.misc.SqlExceptionUtil;
 import com.j256.ormlite.misc.TransactionManager;
 import com.j256.ormlite.stmt.StatementBuilder.StatementType;
@@ -60,6 +67,13 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 	private FieldType[] ifExistsFieldTypes;
 	private RawRowMapper<T> rawRowMapper;
 
+	private final ThreadLocal<Boolean> localIsInBatchMode = new ThreadLocal<Boolean>() {
+		@Override
+		protected Boolean initialValue() {
+			return false;
+		}
+	};
+
 	/**
 	 * Provides statements for various SQL operations.
 	 */
@@ -85,10 +99,10 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 	 */
 	public T queryForFirst(DatabaseConnection databaseConnection, PreparedStmt<T> preparedStmt, ObjectCache objectCache)
 			throws SQLException {
-		CompiledStatement stmt = preparedStmt.compile(databaseConnection, StatementType.SELECT);
+		CompiledStatement compiledStatement = preparedStmt.compile(databaseConnection, StatementType.SELECT);
 		DatabaseResults results = null;
 		try {
-			results = stmt.runQuery(objectCache);
+			results = compiledStatement.runQuery(objectCache);
 			if (results.first()) {
 				logger.debug("query-for-first of '{}' returned at least 1 result", preparedStmt.getStatement());
 				return preparedStmt.mapRow(results);
@@ -97,10 +111,8 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 				return null;
 			}
 		} finally {
-			if (results != null) {
-				results.close();
-			}
-			stmt.close();
+			IOUtils.closeThrowSqlException(results, "results");
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -132,20 +144,18 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 	 * Return a long value from a prepared query.
 	 */
 	public long queryForLong(DatabaseConnection databaseConnection, PreparedStmt<T> preparedStmt) throws SQLException {
-		CompiledStatement stmt = preparedStmt.compile(databaseConnection, StatementType.SELECT_LONG);
+		CompiledStatement compiledStatement = preparedStmt.compile(databaseConnection, StatementType.SELECT_LONG);
 		DatabaseResults results = null;
 		try {
-			results = stmt.runQuery(null);
+			results = compiledStatement.runQuery(null);
 			if (results.first()) {
 				return results.getLong(0);
 			} else {
 				throw new SQLException("No result found in queryForLong: " + preparedStmt.getStatement());
 			}
 		} finally {
-			if (results != null) {
-				results.close();
-			}
-			stmt.close();
+			IOUtils.closeThrowSqlException(results, "results");
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -159,26 +169,22 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			// need to do the (Object) cast to force args to be a single object
 			logger.trace("query arguments: {}", (Object) arguments);
 		}
-		CompiledStatement stmt = null;
+		CompiledStatement compiledStatement = null;
 		DatabaseResults results = null;
 		try {
-			stmt =
+			compiledStatement =
 					databaseConnection.compileStatement(query, StatementType.SELECT, noFieldTypes,
 							DatabaseConnection.DEFAULT_RESULT_FLAGS);
-			assignStatementArguments(stmt, arguments);
-			results = stmt.runQuery(null);
+			assignStatementArguments(compiledStatement, arguments);
+			results = compiledStatement.runQuery(null);
 			if (results.first()) {
 				return results.getLong(0);
 			} else {
 				throw new SQLException("No result found in queryForLong: " + query);
 			}
 		} finally {
-			if (results != null) {
-				results.close();
-			}
-			if (stmt != null) {
-				stmt.close();
-			}
+			IOUtils.closeThrowSqlException(results, "results");
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -199,7 +205,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			logger.debug("query of '{}' returned {} results", preparedStmt.getStatement(), results.size());
 			return results;
 		} finally {
-			iterator.close();
+			IOUtils.closeThrowSqlException(iterator, "iterator");
 		}
 	}
 
@@ -246,9 +252,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			compiledStatement = null;
 			return iterator;
 		} finally {
-			if (compiledStatement != null) {
-				compiledStatement.close();
-			}
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 			if (connection != null) {
 				connectionSource.releaseConnection(connection);
 			}
@@ -279,9 +283,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			connection = null;
 			return rawResults;
 		} finally {
-			if (compiledStatement != null) {
-				compiledStatement.close();
-			}
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 			if (connection != null) {
 				connectionSource.releaseConnection(connection);
 			}
@@ -312,9 +314,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			connection = null;
 			return rawResults;
 		} finally {
-			if (compiledStatement != null) {
-				compiledStatement.close();
-			}
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 			if (connection != null) {
 				connectionSource.releaseConnection(connection);
 			}
@@ -345,9 +345,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			connection = null;
 			return rawResults;
 		} finally {
-			if (compiledStatement != null) {
-				compiledStatement.close();
-			}
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 			if (connection != null) {
 				connectionSource.releaseConnection(connection);
 			}
@@ -378,47 +376,43 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			connection = null;
 			return rawResults;
 		} finally {
-			if (compiledStatement != null) {
-				compiledStatement.close();
-			}
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 			if (connection != null) {
 				connectionSource.releaseConnection(connection);
 			}
 		}
 	}
 
-    /**
-     * Return a results object associated with an internal iterator is mapped by the user's rowMapper.
-     */
-    public <UO> GenericRawResults<UO> queryRaw(ConnectionSource connectionSource, String query,
-                                               ResultSetMapper<UO> rowMapper, String[] arguments, ObjectCache objectCache) throws SQLException {
-        logger.debug("executing raw query for: {}", query);
-        if (arguments.length > 0) {
-            // need to do the (Object) cast to force args to be a single object
-            logger.trace("query arguments: {}", (Object) arguments);
-        }
-        DatabaseConnection connection = connectionSource.getReadOnlyConnection();
-        CompiledStatement compiledStatement = null;
-        try {
-            compiledStatement =
-                    connection.compileStatement(query, StatementType.SELECT, noFieldTypes,
-                            DatabaseConnection.DEFAULT_RESULT_FLAGS);
-            assignStatementArguments(compiledStatement, arguments);
-            RawResultsImpl<UO> rawResults =
-                    new RawResultsImpl<UO>(connectionSource, connection, query, String[].class, compiledStatement,
-                            new UserResultSetMapper<UO>(rowMapper), objectCache);
-            compiledStatement = null;
-            connection = null;
-            return rawResults;
-        } finally {
-            if (compiledStatement != null) {
-                compiledStatement.close();
-            }
-            if (connection != null) {
-                connectionSource.releaseConnection(connection);
-            }
-        }
-    }
+	/**
+	 * Return a results object associated with an internal iterator is mapped by the user's rowMapper.
+	 */
+	public <UO> GenericRawResults<UO> queryRaw(ConnectionSource connectionSource, String query,
+			DatabaseResultsMapper<UO> mapper, String[] arguments, ObjectCache objectCache) throws SQLException {
+		logger.debug("executing raw query for: {}", query);
+		if (arguments.length > 0) {
+			// need to do the (Object) cast to force args to be a single object
+			logger.trace("query arguments: {}", (Object) arguments);
+		}
+		DatabaseConnection connection = connectionSource.getReadOnlyConnection();
+		CompiledStatement compiledStatement = null;
+		try {
+			compiledStatement =
+					connection.compileStatement(query, StatementType.SELECT, noFieldTypes,
+							DatabaseConnection.DEFAULT_RESULT_FLAGS);
+			assignStatementArguments(compiledStatement, arguments);
+			RawResultsImpl<UO> rawResults =
+					new RawResultsImpl<UO>(connectionSource, connection, query, Object[].class, compiledStatement,
+							new UserDatabaseResultsMapper<UO>(mapper), objectCache);
+			compiledStatement = null;
+			connection = null;
+			return rawResults;
+		} finally {
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
+			if (connection != null) {
+				connectionSource.releaseConnection(connection);
+			}
+		}
+	}
 
 	/**
 	 * Return the number of rows affected.
@@ -436,7 +430,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			assignStatementArguments(compiledStatement, arguments);
 			return compiledStatement.runUpdate();
 		} finally {
-			compiledStatement.close();
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -464,7 +458,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			assignStatementArguments(compiledStatement, arguments);
 			return compiledStatement.runExecute();
 		} finally {
-			compiledStatement.close();
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -475,7 +469,11 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (mappedInsert == null) {
 			mappedInsert = MappedCreate.build(databaseType, tableInfo);
 		}
-		return mappedInsert.insert(databaseType, databaseConnection, data, objectCache);
+		int result = mappedInsert.insert(databaseType, databaseConnection, data, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
@@ -485,7 +483,11 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (mappedUpdate == null) {
 			mappedUpdate = MappedUpdate.build(databaseType, tableInfo);
 		}
-		return mappedUpdate.update(databaseConnection, data, objectCache);
+		int result = mappedUpdate.update(databaseConnection, data, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
@@ -496,18 +498,26 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (mappedUpdateId == null) {
 			mappedUpdateId = MappedUpdateId.build(databaseType, tableInfo);
 		}
-		return mappedUpdateId.execute(databaseConnection, data, newId, objectCache);
+		int result = mappedUpdateId.execute(databaseConnection, data, newId, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
 	 * Update rows in the database.
 	 */
 	public int update(DatabaseConnection databaseConnection, PreparedUpdate<T> preparedUpdate) throws SQLException {
-		CompiledStatement stmt = preparedUpdate.compile(databaseConnection, StatementType.UPDATE);
+		CompiledStatement compiledStatement = preparedUpdate.compile(databaseConnection, StatementType.UPDATE);
 		try {
-			return stmt.runUpdate();
+			int result = compiledStatement.runUpdate();
+			if (dao != null && !localIsInBatchMode.get()) {
+				dao.notifyChanges();
+			}
+			return result;
 		} finally {
-			stmt.close();
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
@@ -529,7 +539,11 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (mappedDelete == null) {
 			mappedDelete = MappedDelete.build(databaseType, tableInfo);
 		}
-		return mappedDelete.delete(databaseConnection, data, objectCache);
+		int result = mappedDelete.delete(databaseConnection, data, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
@@ -539,7 +553,11 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (mappedDelete == null) {
 			mappedDelete = MappedDelete.build(databaseType, tableInfo);
 		}
-		return mappedDelete.deleteById(databaseConnection, id, objectCache);
+		int result = mappedDelete.deleteById(databaseConnection, id, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
@@ -548,7 +566,12 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 	public int deleteObjects(DatabaseConnection databaseConnection, Collection<T> datas, ObjectCache objectCache)
 			throws SQLException {
 		// have to build this on the fly because the collection has variable number of args
-		return MappedDeleteCollection.deleteObjects(databaseType, tableInfo, databaseConnection, datas, objectCache);
+		int result =
+				MappedDeleteCollection.deleteObjects(databaseType, tableInfo, databaseConnection, datas, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
@@ -557,36 +580,82 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 	public int deleteIds(DatabaseConnection databaseConnection, Collection<ID> ids, ObjectCache objectCache)
 			throws SQLException {
 		// have to build this on the fly because the collection has variable number of args
-		return MappedDeleteCollection.deleteIds(databaseType, tableInfo, databaseConnection, ids, objectCache);
+		int result = MappedDeleteCollection.deleteIds(databaseType, tableInfo, databaseConnection, ids, objectCache);
+		if (dao != null && !localIsInBatchMode.get()) {
+			dao.notifyChanges();
+		}
+		return result;
 	}
 
 	/**
 	 * Delete rows that match the prepared statement.
 	 */
 	public int delete(DatabaseConnection databaseConnection, PreparedDelete<T> preparedDelete) throws SQLException {
-		CompiledStatement stmt = preparedDelete.compile(databaseConnection, StatementType.DELETE);
+		CompiledStatement compiledStatement = preparedDelete.compile(databaseConnection, StatementType.DELETE);
 		try {
-			return stmt.runUpdate();
+			int result = compiledStatement.runUpdate();
+			if (dao != null && !localIsInBatchMode.get()) {
+				dao.notifyChanges();
+			}
+			return result;
 		} finally {
-			stmt.close();
+			IOUtils.closeThrowSqlException(compiledStatement, "compiled statement");
 		}
 	}
 
 	/**
 	 * Call batch tasks inside of a connection which may, or may not, have been "saved".
 	 */
-	public <CT> CT callBatchTasks(DatabaseConnection connection, boolean saved, Callable<CT> callable)
+	public <CT> CT callBatchTasks(ConnectionSource connectionSource, Callable<CT> callable) throws SQLException {
+		if (connectionSource.isSingleConnection()) {
+			synchronized (this) {
+				return doCallBatchTasks(connectionSource, callable);
+			}
+		} else {
+			return doCallBatchTasks(connectionSource, callable);
+		}
+	}
+
+	private <CT> CT doCallBatchTasks(ConnectionSource connectionSource, Callable<CT> callable) throws SQLException {
+		boolean saved = false;
+		DatabaseConnection connection = connectionSource.getReadWriteConnection();
+		try {
+			/*
+			 * We are using a thread-local boolean to detect whether we are in the middle of running a number of
+			 * changes. This disables the dao change notification for every batched call.
+			 */
+			localIsInBatchMode.set(true);
+			/*
+			 * We need to save the connection because we are going to be disabling auto-commit on it and we don't want
+			 * pooled connection factories to give us another connection where auto-commit might still be enabled.
+			 */
+			saved = connectionSource.saveSpecialConnection(connection);
+			return doCallBatchTasks(connection, saved, callable);
+		} finally {
+			if (saved) {
+				connectionSource.clearSpecialConnection(connection);
+			}
+			connectionSource.releaseConnection(connection);
+			localIsInBatchMode.set(false);
+			if (dao != null) {
+				// only at the end is the DAO notified of changes
+				dao.notifyChanges();
+			}
+		}
+	}
+
+	private <CT> CT doCallBatchTasks(DatabaseConnection connection, boolean saved, Callable<CT> callable)
 			throws SQLException {
 		if (databaseType.isBatchUseTransaction()) {
 			return TransactionManager.callInTransaction(connection, saved, databaseType, callable);
 		}
-		boolean autoCommitAtStart = false;
+		boolean resetAutoCommit = false;
 		try {
 			if (connection.isAutoCommitSupported()) {
-				autoCommitAtStart = connection.isAutoCommit();
-				if (autoCommitAtStart) {
+				if (connection.isAutoCommit()) {
 					// disable auto-commit mode if supported and enabled at start
 					connection.setAutoCommit(false);
+					resetAutoCommit = true;
 					logger.debug("disabled auto-commit on table {} before batch tasks", tableInfo.getTableName());
 				}
 			}
@@ -598,7 +667,7 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 				throw SqlExceptionUtil.create("Batch tasks callable threw non-SQL exception", e);
 			}
 		} finally {
-			if (autoCommitAtStart) {
+			if (resetAutoCommit) {
 				/**
 				 * Try to restore if we are in auto-commit mode.
 				 * 
@@ -624,11 +693,16 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 		if (ifExistsQuery == null) {
 			QueryBuilder<T, ID> qb = new QueryBuilder<T, ID>(databaseType, tableInfo, dao);
 			qb.selectRaw("COUNT(*)");
+			/*
+			 * NOTE: bit of a hack here because the select arg is never used but it _can't_ be a constant because we set
+			 * field-name and field-type on it.
+			 */
 			qb.where().eq(tableInfo.getIdField().getColumnName(), new SelectArg());
 			ifExistsQuery = qb.prepareStatementString();
 			ifExistsFieldTypes = new FieldType[] { tableInfo.getIdField() };
 		}
-		long count = connection.queryForLong(ifExistsQuery, new Object[] { id }, ifExistsFieldTypes);
+		Object idSqlArg = tableInfo.getIdField().convertJavaFieldToSqlArgValue(id);
+		long count = connection.queryForLong(ifExistsQuery, new Object[] { idSqlArg }, ifExistsFieldTypes);
 		logger.debug("query of '{}' returned {}", ifExistsQuery, count);
 		return (count != 0);
 	}
@@ -672,19 +746,6 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 			return columnNames;
 		}
 	}
-
-    private static class UserResultSetMapper<UO> implements GenericRowMapper<UO> {
-
-        public final ResultSetMapper<UO> mapper;
-
-        private UserResultSetMapper(ResultSetMapper<UO> mapper) {
-            this.mapper = mapper;
-        }
-
-        public UO mapRow(DatabaseResults results) throws SQLException {
-            return mapper.mapRow(results.getResultSet());
-        }
-    }
 
 	/**
 	 * Map raw results to return a user object from an Object array.
@@ -746,6 +807,22 @@ public class StatementExecutor<T, ID> implements GenericRowMapper<String[]> {
 				result[colC] = dataType.getDataPersister().resultToJava(null, results, colC);
 			}
 			return result;
+		}
+	}
+
+	/**
+	 * Mapper which uses the {@link DatabaseResults} directly.
+	 */
+	private static class UserDatabaseResultsMapper<UO> implements GenericRowMapper<UO> {
+
+		public final DatabaseResultsMapper<UO> mapper;
+
+		private UserDatabaseResultsMapper(DatabaseResultsMapper<UO> mapper) {
+			this.mapper = mapper;
+		}
+
+		public UO mapRow(DatabaseResults results) throws SQLException {
+			return mapper.mapRow(results);
 		}
 	}
 }

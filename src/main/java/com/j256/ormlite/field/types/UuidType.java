@@ -27,6 +27,10 @@ public class UuidType extends BaseDataType {
 		super(SqlType.STRING, new Class<?>[] { UUID.class });
 	}
 
+	protected UuidType(SqlType sqlType) {
+		super(sqlType);
+	}
+
 	/**
 	 * Here for others to subclass.
 	 */
@@ -35,13 +39,8 @@ public class UuidType extends BaseDataType {
 	}
 
 	@Override
-	public Object parseDefaultString(FieldType fieldType, String defaultStr) throws SQLException {
-		try {
-			return java.util.UUID.fromString(defaultStr);
-		} catch (IllegalArgumentException e) {
-			throw SqlExceptionUtil.create("Problems with field " + fieldType + " parsing default UUID-string '"
-					+ defaultStr + "'", e);
-		}
+	public Object parseDefaultString(FieldType fieldType, String defaultStr) {
+		return defaultStr;
 	}
 
 	@Override

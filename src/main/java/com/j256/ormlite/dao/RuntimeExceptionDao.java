@@ -1,5 +1,6 @@
 package com.j256.ormlite.dao;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
@@ -7,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 
 import com.j256.ormlite.dao.Dao.CreateOrUpdateStatus;
+import com.j256.ormlite.dao.Dao.DaoObserver;
 import com.j256.ormlite.field.DataType;
 import com.j256.ormlite.field.FieldType;
 import com.j256.ormlite.logger.Log.Level;
@@ -29,13 +31,9 @@ import com.j256.ormlite.table.ObjectFactory;
  * Proxy to a {@link Dao} that wraps each Exception and rethrows it as RuntimeException. You can use this if your usage
  * pattern is to ignore all exceptions. That's not a pattern that I like so it's not the default.
  * 
- * <p>
- * 
  * <pre>
  * RuntimeExceptionDao&lt;Account, String&gt; accountDao = RuntimeExceptionDao.createDao(connectionSource, Account.class);
  * </pre>
- * 
- * </p>
  * 
  * @author graywatson
  */
@@ -230,6 +228,18 @@ public class RuntimeExceptionDao<T, ID> implements CloseableIterable<T> {
 	}
 
 	/**
+	 * @see Dao#create(Collection)
+	 */
+	public int create(Collection<T> datas) {
+		try {
+			return dao.create(datas);
+		} catch (SQLException e) {
+			logMessage(e, "create threw exception on: " + datas);
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
 	 * @see Dao#createIfNotExists(Object)
 	 */
 	public T createIfNotExists(T data) {
@@ -399,7 +409,7 @@ public class RuntimeExceptionDao<T, ID> implements CloseableIterable<T> {
 	public void closeLastIterator() {
 		try {
 			dao.closeLastIterator();
-		} catch (SQLException e) {
+		} catch (IOException e) {
 			logMessage(e, "closeLastIterator threw exception");
 			throw new RuntimeException(e);
 		}
@@ -484,6 +494,18 @@ public class RuntimeExceptionDao<T, ID> implements CloseableIterable<T> {
 	public GenericRawResults<Object[]> queryRaw(String query, DataType[] columnTypes, String... arguments) {
 		try {
 			return dao.queryRaw(query, columnTypes, arguments);
+		} catch (SQLException e) {
+			logMessage(e, "queryRaw threw exception on: " + query);
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
+	 * @see Dao#queryRaw(String, DatabaseResultsMapper, String...)
+	 */
+	public <UO> GenericRawResults<UO> queryRaw(String query, DatabaseResultsMapper<UO> mapper, String... arguments) {
+		try {
+			return dao.queryRaw(query, mapper, arguments);
 		} catch (SQLException e) {
 			logMessage(e, "queryRaw threw exception on: " + query);
 			throw new RuntimeException(e);
@@ -841,6 +863,18 @@ public class RuntimeExceptionDao<T, ID> implements CloseableIterable<T> {
 	 */
 	public ConnectionSource getConnectionSource() {
 		return dao.getConnectionSource();
+	}
+
+	public void registerObserver(DaoObserver observer) {
+		dao.registerObserver(observer);
+	}
+
+	public void unregisterObserver(DaoObserver observer) {
+		dao.unregisterObserver(observer);
+	}
+
+	public void notifyChanges() {
+		dao.notifyChanges();
 	}
 
 	private void logMessage(Exception e, String message) {
